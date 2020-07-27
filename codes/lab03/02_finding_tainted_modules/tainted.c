@@ -10,7 +10,7 @@
 #include <linux/list.h>   /* list */
 #include <linux/string.h> /* for memset */
 
-#define DECLARE_DEV(name) struct tainted_dev *name;
+#define DECLARE_DEV(name) struct tainted_dev *name
 #define FIRST_MINOR 0
 #define DEV_COUNT 1
 #define DEV_NAME "taint_module"
@@ -25,16 +25,17 @@ static void my_module_cleanup(void);
 static int setup_cdev(int);
 
 static int module_major = 0;
-static DECLARE_DEV(tdev);
+DECLARE_DEV(tdev);
 
 static int setup_cdev(int minor)
 {
-    int err, devno;
+    int err;
+    dev_t devno;
 
     devno = MKDEV(module_major, minor);
-    tdev->cdev.owner = THIS_MODULE;
 
     cdev_init(&tdev->cdev, NULL);
+    tdev->cdev.owner = THIS_MODULE;
 
     err = cdev_add(&tdev->cdev, devno, DEV_COUNT);
     if (err < 0)
@@ -49,23 +50,28 @@ static int __init my_module_init(void)
     int err;
 
     struct module *pos;
+    printk(KERN_INFO "Allocating major number\n");
 
     err = alloc_chrdev_region(&devno, FIRST_MINOR, DEV_COUNT, DEV_NAME);
-    module_major = MAJOR(devno);
 
     if (err < 0)
+    {
+        printk(KERN_INFO "Could allocate major number\n");
         return err;
+    }
 
+    module_major = MAJOR(devno);
     printk(KERN_INFO "Module created with major number %d\n", module_major);
 
     tdev = kmalloc(sizeof(struct tainted_dev), GFP_KERNEL);
-    memset(tdev, 0, sizeof(struct tainted_dev));
 
     if (!tdev)
     {
         err = -ENOMEM;
         goto fail;
     }
+    printk(KERN_INFO "Memory allocation went ok\n");
+    memset(tdev, 0, sizeof(struct tainted_dev));
 
     err = setup_cdev(FIRST_MINOR);
 
@@ -74,10 +80,9 @@ static int __init my_module_init(void)
         goto fail;
     }
 
-    list_for_each_entry(pos, &tdev->cdev.owner->list, list)
+    list_for_each_entry(pos, &(tdev->cdev.owner->list), list)
     {
-        if (pos->taints)
-            printk(KERN_INFO "Module %s is tainted\n", pos->name);
+        printk(KERN_INFO "Module %s has tainted value of %lu \n", pos->name, pos->taints);
     }
     return 0;
 
@@ -92,10 +97,14 @@ static void my_module_cleanup(void)
     if (tdev)
     {
         if (&tdev->cdev)
-            cdev_del(&tdev->cdev);
+            printk(KERN_INFO "Ready to delete char_device\n");
+        cdev_del(&tdev->cdev);
 
+        printk(KERN_INFO "Freeing memory space");
         kfree(tdev);
     }
+    printk(KERN_INFO "Freeing major number");
+    unregister_chrdev_region(MKDEV(module_major, FIRST_MINOR), DEV_COUNT);
 }
 
 module_init(my_module_init);
